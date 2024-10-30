@@ -1,0 +1,58 @@
+name: Run Chainbench ( Locust ) load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      container_count:
+        description: 'Number of GitHub containers to run'
+        required: true
+        default: '1'
+      rpc_url:
+        description: 'RPC URL to test'
+        required: true
+        default: 'http://localhost:8545'
+      users_per_container:
+        description: 'Amount of users to run from a single container'
+        required: true
+        default: '300'
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Calculate container array
+        id: set-matrix
+        run: 
+          MATRIX=[$(seq -s, 1 ${{ inputs.container_count }} | sed 's/,$//')]"
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          
+  locust:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        containers: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          pip install chainbench
+
+      - name: Run Chainbench tests
+        run: chainbench start --target  ${{ fromJson(inputs.rpc_url) }} --use-latest-blocks --profile evm.light --users ${{ fromJson(inputs.container_count) }} --test-time 5m --autoquit
+
+      - name: Upload Report
+        uses: actions/upload-artifact@v2
+        with:
+          name: locust-report-${{ matrix.containers }}
+          path: results
